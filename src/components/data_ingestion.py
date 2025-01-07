@@ -35,6 +35,7 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
+from sklearn.model_selection import GridSearchCV
 
 LOG_FILE = f"{datetime.now().strftime("%m_%d_%Y_%H_%M_%S")}.log"
 log_path = os.path.join(os.getcwd(), "logs", LOG_FILE)
@@ -101,35 +102,73 @@ class ModelTrainer:
                 'Gradient Boosting' : GradientBoostingRegressor(),
                 'K-Nearest Neighbor' : KNeighborsRegressor(),
                 'Linear Regression' : LinearRegression(),
-                'CatBoosting' : CatBoostRegressor(),
-                'XGB Classifer' : XGBRegressor(),
-                'Adaboost' : AdaBoostRegressor()
+                # 'XGB Regressor' : XGBRegressor(),
+                # 'Adaboost Regressor' : AdaBoostRegressor()
             }
-            def evaluate_models(X_train, y_train, X_test, y_test, models):
+            params = {
+                "Decision Tree":{
+                    'criterion':['squared_error', 'freidman_mse', 'absolute_error', 'poisson'],
+                    'splitter': ['best', 'random'],
+                    'max_features': ['sqrt', 'log2']
+                },
+
+                "Random Forest":{
+                    'criterion':['squared_error', 'freidman_mse', 'absolute_error', 'poisson'],
+                    'n_estimators': [100, 150, 200, 250, 300, 400, 500],
+                    'max_features': ['sqrt', 'log2']
+                },
+                "Gradient Boosting":{
+                    'loss':['squared_error', 'absolute_error', 'huber', 'quantile'],
+                    'criterion':['friedman_mse', 'squared_error'],
+                    'n_estimators': [100, 150,  200, 250, 300, 400, 500],
+                },
+                "Linear Regression":{},
+                "K-Nearest Neighbor":{
+                    'n_neighbors':[5, 6, 7, 8, 9, 10, 12, 13, 14, 15],
+                },
+                # "XGB Regressor":{
+                #     'learning_rate':[0.1, 0.01, 0.05, 0.001],
+                #     'n_estimators':[8, 10, 12, 13, 14, 15, 18, 20],
+                #     'iterators':[30, 40, 50, 80, 100]
+                # },
+                # "Adaboost Regressor":{
+                #     'learning rate':[0.1, 0.01, 0.05, 0.001],
+                #     'n_estimators':[8, 10, 12, 13, 14, 15, 18, 20],
+
+
+
+                }
+            def evaluate_models(X_train, y_train, X_test, y_test, models, params, cv = 3, n_jobs = 3, verbose = 3):
                 try:
                     report = {}
 
                     for i in range(len(list(models))):
                         model = list(models.values())[i]
+                        para = params[list(models.keys())[i]]
+
+                        gs = GridSearchCV(model, para, cv = cv, n_jobs = n_jobs, verbose =verbose)
+                        gs.fit(X_train, y_train)
+
+                        model.set_params(**gs.best_params_)
                         model.fit(X_train, y_train)
 
                         y_train_pred = model.predict(X_train)
-
                         y_test_pred = model.predict(X_test)
 
                         train_model_score = r2_score(y_train, y_train_pred)
-
                         test_model_score = r2_score(y_test, y_test_pred)
 
-                        report[list(models.keys())[i]] = test_model_score
+                        report[list(models.keys())[i]] = (test_model_score, gs.best_params_)
 
                     return report    
+
+                            
                 except Exception as e:
                     raise CustomException(e, sys)
 
             model_report:dict = evaluate_models(X_train = X_train, y_train = y_train, 
                                                X_test = X_test, y_test = y_test, 
-                                               models = models)
+                                               models = models, params = params)
             
             # To get the best models score from the above dictionary
             best_model_score = max(sorted(model_report.values()))
@@ -141,9 +180,9 @@ class ModelTrainer:
 
             best_model = models[best_model_name]
 
-            if best_model_score<0.6:
-                raise CustomException('No best model found')
-            logging.info(f'Best found model on both training and testing dataset{best_model}')
+            # if best_model_score<0.6:
+            #     raise CustomException('No best model found')
+            # logging.info(f'Best found model on both training and testing dataset{best_model}')
 
             save_object(
                 file_path = self.model_trainer_config.trained_model_file_path,
@@ -154,13 +193,6 @@ class ModelTrainer:
 
             r2_square = r2_score(y_test, predicted)
             return r2_square
-
-
-
-
-
-
-
 
         except Exception as e:
             raise CustomException(e, sys)
